@@ -65,11 +65,16 @@ git push -u origin main
 ```bash
 # 端点（endpoint）配置
 Image            ghcr.io/<用户名>/<仓库名>:latest
-Env              MODELS_DIR=/workspace/models
+Network Volume   80 GB（强烈建议：否则每次冷启动都要重下 41GB）
+Env              MODELS_DIR=/runpod-volume/models     # ← Serverless 的卷挂载点是 /runpod-volume
                  CIVITAI_TOKEN=<你的Key>
-                 AUTO_DOWNLOAD_MODELS=1
-Network Volume   80 GB 挂到 /workspace（强烈建议：否则每次冷启动都要重下 41GB）
+                 AUTO_DOWNLOAD_MODELS=0               # 卷里已预热好就设 0，避免每次冷启动重新校验 41GB
 ```
+
+> **挂载点别写错**：网络卷挂到 **Serverless worker 是 `/runpod-volume`**，挂到 **Pod 才是 `/workspace`**
+> （见 [RunPod 文档：network volume path mapping](https://docs.runpod.io/storage/s3-api)）。
+> 卷里如果空着，首次冷启动可以临时用 `AUTO_DOWNLOAD_MODELS=1` 让它自己下；更推荐先按
+> 「§2 模型怎么上去」把卷预热好再设回 `0`。
 
 **作业协议**（`handler.py`）：
 
@@ -110,6 +115,40 @@ Network Volume   80 GB 挂到 /workspace（强烈建议：否则每次冷启动�
 | **① 容器首启自动下载** | `AUTO_DOWNLOAD_MODELS=1`（默认）+ `CIVITAI_TOKEN`；国内加 `HF_MIRROR=https://hf-mirror.com` | 最省事 |
 | **② 本地先灌进网络卷** | `rsync -avP D:/comfyUI/models/ root@<pod>:/workspace/models/`（或 RunPod 网页上传），容器只读卷 | 想控制带宽 |
 | **③ 模型烤进镜像** | Dockerfile 里加 `RUN python scripts/download_models.py` | 镜像变 ~60 GB，不推荐 |
+
+### 往网络卷灌数据的三种方式
+
+卷的路径映射（官方文档）：Pod 上是 `/workspace/<path>`，Serverless worker 上是 `/runpod-volume/<path>`，
+S3 API 上是 `s3://<NETWORK_VOLUME_ID>/<path>`。
+
+**① 在 Pod 里直接下载（推荐，不占本机上行）** —— 起一个便宜 Pod 挂上卷，在里面跑本仓库的下载器：
+
+```bash
+cd /workspace
+git clone https://github.com/<用户名>/<仓库名> /opt/bundle
+CIVITAI_TOKEN=xxx python3 /opt/bundle/scripts/download_models.py \
+    --dest-root /workspace --models-dir /workspace/models --jobs 4
+# 校验
+python3 /opt/bundle/scripts/download_models.py --verify-only \
+    --dest-root /workspace --models-dir /workspace/models
+```
+
+**② S3 兼容 API（不用开 Pod）** —— 需卷所在的机房在支持列表内（US-WA-1 / US-CA-2 / EU-CZ-1 …），
+桶名 = 网络卷 ID，Access Key = Runpod 用户 ID，Secret = 控制台 S3 API Key：
+
+```bash
+aws s3 sync D:/comfyUI/models s3://<NETWORK_VOLUME_ID>/models \
+    --region <DATACENTER> --endpoint-url https://s3api-<DATACENTER>.runpod.io/
+# 或 rclone（更适合 41GB，可续传、可并发）
+rclone copy D:/comfyUI/models <remote>:<NETWORK_VOLUME_ID>/models --progress --transfers 8
+```
+
+**③ Pod + scp/rsync**：
+
+```bash
+scp -P <POD_PORT> -r D:/comfyUI/models root@<POD_IP>:/workspace/models
+# WSL 里更好用：rsync -avP --partial D:/comfyUI/models/ root@<POD_IP>:/workspace/models/
+```
 
 > 清单里 4 个 Civitai 文件（shadowforge / k2-void / Krea2Rella / masterpiece）创作者开了「需登录下载」，
 > 必须提供 `CIVITAI_TOKEN`（<https://civitai.com/user/account> → API Keys）；其余文件无 token 也能从 HF 直链下。
