@@ -1,0 +1,2 @@
+# RunPod queue-based Serverless 依赖（Pod 模式用不到，但同一个镜像两者都支持）
+runpod>=1.12,<2

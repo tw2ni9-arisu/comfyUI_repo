@@ -43,7 +43,10 @@ RUN PIP_INDEX="$PIP_INDEX" TORCH_INDEX="$TORCH_INDEX" TORCH_SPEC="$TORCH_SPEC" \
 # 2) 自定义节点（按 pin 的 commit）+ 每个节点自己的依赖
 RUN bash "$BUNDLE_DIR/scripts/install_node_deps.sh"
 
-# 3) 自检：确认核心与节点能 import（构建期失败好过运行时才发现）
+# 3) RunPod Serverless（queue-based endpoint）用到的 runpod SDK
+RUN "$VENV_DIR/bin/pip" install -r "$BUNDLE_DIR/requirements-serverless.txt" --index-url "$PIP_INDEX"
+
+# 4) 自检：确认核心与节点能 import（构建期失败好过运行时才发现）
 RUN python "$BUNDLE_DIR/scripts/selfcheck.py"
 
 WORKDIR $COMFYUI_DIR

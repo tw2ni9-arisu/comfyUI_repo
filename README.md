@@ -55,11 +55,51 @@ git push -u origin main
 首次构建约 15–30 分钟，镜像约 20 GB。GHCR 包默认私有，RunPod 拉取要么把包设为 Public，
 要么在 RunPod 模板里配镜像仓库凭据。
 
-### 关于 Serverless
+### 方式 D：RunPod Serverless（queue-based endpoint）
 
-本仓库面向 **RunPod Pod（常驻 GPU）**。Serverless 需要额外 worker handler，
-推荐直接用官方的 `runpod/worker-comfyui`，并把本仓库的 `config/models.manifest.json` 与
-`scripts/download_models.py` 接进去复用。
+同一个镜像两种模式都能跑，靠环境变量自动切换：
+
+- **Serverless**：RunPod 会注入 `RUNPOD_ENDPOINT_ID` → `start.sh` 自动 `exec handler.py`（queue worker）
+- **Pod**：没有该变量 → 照常启动 ComfyUI Web 服务（8188）
+
+```bash
+# 端点（endpoint）配置
+Image            ghcr.io/<用户名>/<仓库名>:latest
+Env              MODELS_DIR=/workspace/models
+                 CIVITAI_TOKEN=<你的Key>
+                 AUTO_DOWNLOAD_MODELS=1
+Network Volume   80 GB 挂到 /workspace（强烈建议：否则每次冷启动都要重下 41GB）
+```
+
+**作业协议**（`handler.py`）：
+
+```json
+{
+  "input": {
+    "workflow": { "3": {"class_type": "KSampler", "inputs": {...}}, "...": {} },
+    "images": [{"name": "ref.png", "image": "<base64>", "subfolder": ""}],
+    "extra_data": {}
+  }
+}
+```
+
+返回：
+
+```json
+{
+  "prompt_id": "…",
+  "status": {"status_str": "success", "completed": true},
+  "images": [{"filename": "ComfyUI_00001_.png", "type": "base64", "data": "…"}]
+}
+```
+
+失败时返回 `{"error": "..."}`。`input.workflow` 必填，且必须是 **API 格式**工作流
+（ComfyUI 界面里「Workflow → Export (API)」导出的那份，不是 UI 格式）。
+`input.images` 里的图会先通过 `/upload/image` 写进 ComfyUI 的 input 目录，供 `LoadImage` 节点使用。
+
+> 如果你更想用官方维护的 worker，可以改用 `runpod/worker-comfyui`，把本仓库的
+> `config/models.manifest.json` + `scripts/download_models.py` 接进去复用模型清单；
+> 本仓库自带的 handler 是它的精简等价实现，好处是 Pod / Serverless 共用同一个镜像。
 
 ---
 
