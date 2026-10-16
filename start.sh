@@ -53,6 +53,16 @@ if [ "$AUTO_DOWNLOAD_MODELS" = "1" ]; then
       || echo "[warn] 模型未全部就绪，继续启动（可在容器内重跑 download_models.py）"
 fi
 
+echo "==> 设备自检"
+"$PY" - <<'PY'
+import torch
+if torch.cuda.is_available():
+    p = torch.cuda.get_device_properties(0)
+    print("GPU: %s | VRAM %.1f GB | torch %s (cuda %s)" % (p.name, p.total_memory / 1024**3, torch.__version__, torch.version.cuda))
+else:
+    print("[warn] 未检测到 GPU，ComfyUI 将以 CPU 运行 —— 请确认 Pod 选了 GPU")
+PY
+
 echo "==> 启动 ComfyUI: http://$COMFY_LISTEN:$COMFY_PORT"
 cd "$COMFYUI_DIR"
 run_args=(main.py --listen "$COMFY_LISTEN" --port "$COMFY_PORT")
