@@ -1,0 +1,157 @@
+# ComfyUI RunPod Bundle
+
+把 **ComfyUI v0.40.0 + 30 个自定义节点 + 41.04 GB 模型清单** 打包成一个可直接导入 RunPod 的仓库。
+
+- **有**：Dockerfile、ComfyUI/节点的固定 commit、逐节点依赖安装脚本、21 个模型文件的 URL + SHA256 清单、下载器、容器入口脚本、GitHub Actions 自动构建镜像
+- **没有**：模型二进制（GitHub 单文件 100 MB / 仓库 1 GB 上限，这里是 41 GB）、工作流 JSON
+
+---
+
+## 1. 快速开始
+
+### 方式 A：推到 GitHub → Actions 构建镜像 → RunPod 模板（推荐）
+
+1. 把本目录推到 GitHub 仓库
+2. `.github/workflows/docker-publish.yml` 自动构建并推送镜像 `ghcr.io/<用户名>/<仓库名>:latest`
+3. RunPod → **Templates → New Template**：
+
+   | 配置项 | 值 |
+   |---|---|
+   | Container Image | `ghcr.io/<用户名>/<仓库名>:latest` |
+   | Container Disk | `40 GB` |
+   | Volume Disk（推荐） | `80 GB`，Mount Path `/workspace` |
+   | Expose HTTP Ports | `8188` |
+   | Env | `MODELS_DIR=/workspace/models`、`CIVITAI_TOKEN=<你的Key>`、`AUTO_DOWNLOAD_MODELS=1` |
+
+4. 部署 Pod，打开 8188 端口。
+
+> 镜像不含模型：首启时 `start.sh` 调 `download_models.py` 按清单下载到 `MODELS_DIR`。挂了网络卷就只下一次。
+
+### 方式 B：在已有 RunPod Pod 里直接跑
+
+```bash
+git clone <你的仓库> /opt/bundle
+cd /opt/bundle
+bash scripts/install_comfyui.sh
+bash scripts/install_node_deps.sh
+CIVITAI_TOKEN=xxx MODELS_DIR=/workspace/models bash start.sh
+```
+
+### 方式 C：本地 Docker
+
+```bash
+docker build -t comfyui-bundle:cu128 .
+docker run --gpus all -p 8188:8188 -v comfyui-models:/workspace/models \
+  -e MODELS_DIR=/workspace/models -e CIVITAI_TOKEN=xxx comfyui-bundle:cu128
+```
+
+### 推到 GitHub
+
+```bash
+git remote add origin git@github.com:<用户名>/<仓库名>.git
+git push -u origin main
+```
+
+首次构建约 15–30 分钟，镜像约 20 GB。GHCR 包默认私有，RunPod 拉取要么把包设为 Public，
+要么在 RunPod 模板里配镜像仓库凭据。
+
+### 关于 Serverless
+
+本仓库面向 **RunPod Pod（常驻 GPU）**。Serverless 需要额外 worker handler，
+推荐直接用官方的 `runpod/worker-comfyui`，并把本仓库的 `config/models.manifest.json` 与
+`scripts/download_models.py` 接进去复用。
+
+---
+
+## 2. 模型怎么上去（三选一）
+
+| 方案 | 做法 | 适用 |
+|---|---|---|
+| **① 容器首启自动下载** | `AUTO_DOWNLOAD_MODELS=1`（默认）+ `CIVITAI_TOKEN`；国内加 `HF_MIRROR=https://hf-mirror.com` | 最省事 |
+| **② 本地先灌进网络卷** | `rsync -avP D:/comfyUI/models/ root@<pod>:/workspace/models/`（或 RunPod 网页上传），容器只读卷 | 想控制带宽 |
+| **③ 模型烤进镜像** | Dockerfile 里加 `RUN python scripts/download_models.py` | 镜像变 ~60 GB，不推荐 |
+
+> 清单里 4 个 Civitai 文件（shadowforge / k2-void / Krea2Rella / masterpiece）创作者开了「需登录下载」，
+> 必须提供 `CIVITAI_TOKEN`（<https://civitai.com/user/account> → API Keys）；其余文件无 token 也能从 HF 直链下。
+
+---
+
+## 3. 环境变量
+
+| 变量 | 默认 | 说明 |
+|---|---|---|
+| `MODELS_DIR` | 空 | 模型目录（网络卷挂载点）。留空用镜像内 `$COMFYUI_DIR/models`，容器重建会丢 |
+| `AUTO_DOWNLOAD_MODELS` | `1` | 启动时自动补齐缺失模型 |
+| `CIVITAI_TOKEN` | 空 | Civitai API Key |
+| `HF_MIRROR` | 空 | 填 `https://hf-mirror.com` 时自动改写 HF 直链 |
+| `COMFY_PORT` / `COMFY_LISTEN` | `8188` / `0.0.0.0` | 端口与监听地址 |
+| `COMFY_EXTRA_ARGS` | 空 | 透传 `main.py`，如 `--lowvram` |
+| `DOWNLOAD_JOBS` | `2` | 并发下载数 |
+| `PIP_INDEX` / `TORCH_INDEX` | PyPI / pytorch cu128 | 国内构建可换清华源 |
+
+---
+
+## 4. 校验
+
+```bash
+# 只校验（不下载）：逐文件比对 size + SHA256
+python scripts/download_models.py --verify-only \
+    --dest-root /opt/ComfyUI --models-dir /workspace/models
+```
+
+清单：`config/models.manifest.json`（21 个文件，含 `size` / `sha256` / 多来源）。
+
+---
+
+## 5. 目录结构
+
+```
+.
+├── Dockerfile                    # nvidia/cuda 12.8 + python3.12 + torch cu128 + ComfyUI + 节点
+├── start.sh                      # 入口：准备卷 → 下载模型 → 启动 ComfyUI
+├── env.example
+├── config/
+│   ├── comfyui.json              # ComfyUI 固定 commit / 版本组合
+│   ├── custom_nodes.tsv          # 30 个节点：repo / 目录名 / commit
+│   └── models.manifest.json      # 21 个模型：路径 / 大小 / SHA256 / 来源
+├── scripts/
+│   ├── install_comfyui.sh        # 装核心（固定 commit）
+│   ├── install_node_deps.sh      # 装节点及依赖
+│   ├── download_models.py        # 断点续传 + SHA256 校验 + 多源回退
+│   ├── cfg.py                    # UTF-8 安全的配置读取器
+│   └── selfcheck.py              # 构建期自检
+└── .github/workflows/docker-publish.yml
+```
+
+---
+
+## 6. 版本组合（与本地已验证环境一致）
+
+| 组件 | 版本 |
+|---|---|
+| ComfyUI | `v0.40.0` / commit `e0a32bce` |
+| Python | 3.12 |
+| PyTorch | `2.11.0+cu128`（含 sm_120，RTX 50 系必需） |
+| 前端包 | comfyui-frontend-package `1.55.17` |
+| 自定义节点 | 30 个，全部按 commit 固定 |
+| 模型 | 21 个 / 41.04 GB，全部带 SHA256 |
+
+本地质量基线：ComfyUI 启动后 `/object_info` 共 3043 个节点类，清单涉及的 62 个节点类 100% 注册。
+
+---
+
+## 7. 已知缺失 / 替代（不影响启动）
+
+| 项 | 说明 |
+|---|---|
+| 鬼针草 LoRA | 全网无公开源，且在原工作流中是**关闭状态**；需要时放入 `models/loras/画师/` |
+| `qwen3VL4BAbliteratedComfyui_v10.safetensors` | 该文件名全网无公开源。本 bundle 收录两个可用替代：官方 `qwen3vl_4b_fp8_scaled.safetensors`（Comfy-Org）与 Krea2 专用 `qwen3vl_4b_krea2_abliterated_fp8.safetensors`（saracen9） |
+
+---
+
+## 8. 许可
+
+- 本仓库脚本：MIT
+- ComfyUI 本体：GPL-3.0（构建时从上游拉取，不在此仓库分发）
+- 各自定义节点：遵循各自仓库许可
+- 模型权重：遵循各自来源（Civitai / HuggingFace / Meta）的许可与使用条款，**本仓库不分发任何权重**

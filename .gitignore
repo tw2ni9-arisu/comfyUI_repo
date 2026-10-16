@@ -1,0 +1,25 @@
+# —— 模型文件一律不进 git（单文件 100MB / 仓库建议 1GB 上限，这里总量 41GB）——
+models/
+**/models/
+*.safetensors
+*.ckpt
+*.pt
+*.pth
+*.gguf
+*.bin
+!config/**
+# 工作流不进仓库（按需求排除）。注意：不要写 `workflows/` 或 `**/workflows/`，
+# 它们会连带忽略 .github/workflows/；user/ 已覆盖 ComfyUI 的用户工作流目录。
+*workflow*.json
+user/
+# 运行时产物
+logs/
+output/
+temp/
+input/
+*.log
+__pycache__/
+*.pyc
+.venv/
+venv/
+.env

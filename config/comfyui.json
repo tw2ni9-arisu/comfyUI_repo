@@ -1,0 +1,10 @@
+{
+  "repo": "https://github.com/comfyanonymous/ComfyUI.git",
+  "ref": "e0a32bce84f4603f2b61b16b50f8958e68fd6171",
+  "tag": "v0.40.0",
+  "python": "3.12",
+  "torch": "2.11.0+cu128",
+  "torch_index": "https://download.pytorch.org/whl/cu128",
+  "frontend": "comfyui-frontend-package 1.55.17",
+  "note": "本地已验证可用的版本组合（RTX 50 系 sm_120 需要 cu128 及以上）"
+}

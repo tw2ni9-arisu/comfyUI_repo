@@ -1,0 +1,10 @@
+.git
+.github
+*.md
+!README.md
+__pycache__
+*.pyc
+.venv
+venv
+logs
+*.log
