@@ -57,10 +57,10 @@ git push -u origin main
 
 ### 方式 D：RunPod Serverless（queue-based endpoint）
 
-容器入口是 **`handler.py`**（`CMD ["python", "-u", "/handler.py"]`，与 RunPod 官方 worker-basic 写法一致，
-这样 GitHub 部署的 handler 预检才能找到 `runpod.serverless.start()`）。两种模式在 `main()` 里自动分流：
+容器入口是 **`rp_handler.py`**（`CMD ["python", "-u", "/rp_handler.py"]`，即官方 worker-basic 模板的写法，
+这样 GitHub 部署的 handler 预检才能顺着 Dockerfile 的 CMD 找到 `runpod.serverless.start()`）。两种模式在 `main()` 里自动分流：
 
-- **Serverless**：RunPod 注入 `RUNPOD_ENDPOINT_ID` → 拉起 ComfyUI 子进程并进入 queue worker
+- **Serverless**：RunPod 注入 `RUNPOD_ENDPOINT_ID` → 先做卷准备（秒级）并**立刻向 RunPod 注册**，ComfyUI 延迟到第一个任务时才拉起（避免初始化窗口被 1–3 分钟的加载时间拖死）
 - **Pod**：没有该变量 → `exec` 转交 `start.sh`，照常启动 ComfyUI Web 服务（8188）
 
 ```bash
@@ -77,7 +77,7 @@ Env              MODELS_DIR=/runpod-volume/models     # ← Serverless 的卷挂
 > 卷里如果空着，首次冷启动可以临时用 `AUTO_DOWNLOAD_MODELS=1` 让它自己下；更推荐先按
 > 「§2 模型怎么上去」把卷预热好再设回 `0`。
 
-**作业协议**（`handler.py`）：
+**作业协议**（`rp_handler.py`）：
 
 ```json
 {

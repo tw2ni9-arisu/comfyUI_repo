@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""RunPod queue-based Serverless worker（ComfyUI 后端）。
+"""RunPod queue-based Serverless worker（ComfyUI 后端）。文件名沿用官方 worker-basic 模板的 rp_handler.py。
 
 一个常驻的 queue worker：容器启动时把 ComfyUI 作为子进程拉起来（或复用外部实例），
 之后每个作业把一张 API 格式工作流丢给本地 ComfyUI 执行，取回输出图片。
@@ -28,6 +28,7 @@
 
 环境变量：
     COMFY_BASE_URL       复用已在跑的 ComfyUI（默认自己拉起 127.0.0.1:8188）
+    RUNPOD_ENDPOINT_ID   由 RunPod 注入；有它=Serverless 模式，没有=Pod 模式
     COMFY_JOB_TIMEOUT    单个作业超时秒数，默认 1800
     COMFY_POLL_INTERVAL  轮询 /history 间隔，默认 1.5
     COMFY_READY_TIMEOUT  ComfyUI 启动等待秒数，默认 600
@@ -37,6 +38,7 @@ import json
 import os
 import subprocess
 import sys
+import threading
 import time
 import urllib.error
 import urllib.parse
@@ -87,6 +89,15 @@ def wait_until_ready(timeout=None):
     raise RuntimeError("ComfyUI 在 %ss 内未就绪：%s" % (timeout, last_err))
 
 
+def prepare_volume():
+    """卷准备：生成 extra_model_paths.yaml、_staging 归位、ckpts 软链、可选下载。"""
+    prepare = os.path.join(BUNDLE_DIR, "start.sh")
+    if not os.path.exists(prepare):
+        return
+    print("[handler] 准备模型目录：%s" % prepare, flush=True)
+    subprocess.run(["bash", prepare], env=dict(os.environ, BUNDLE_PREPARE_ONLY="1"), check=False)
+
+
 def start_comfy():
     """拉起 ComfyUI 子进程；若给了 COMFY_BASE_URL 则复用外部实例。"""
     global _proc
@@ -95,13 +106,6 @@ def start_comfy():
         wait_until_ready()
         return None
     port = urllib.parse.urlparse(BASE).port or 8188
-    # 卷准备（extra_model_paths.yaml / _staging 归位 / ckpts 软链 / 可选下载）由 start.sh 负责，
-    # 这里以「仅准备」模式调用它，之后再由本进程启动 ComfyUI。
-    prepare = os.path.join(BUNDLE_DIR, "start.sh")
-    if os.path.exists(prepare):
-        print("[handler] 准备模型目录：%s" % prepare, flush=True)
-        subprocess.run(["bash", prepare], env=dict(os.environ, BUNDLE_PREPARE_ONLY="1"), check=False)
-
     cmd = [sys.executable, "main.py", "--listen", "127.0.0.1", "--port", str(port), "--disable-auto-launch"]
     cmd += [a for a in os.environ.get("COMFY_EXTRA_ARGS", "").split() if a]
     print("[handler] 启动 ComfyUI: %s" % " ".join(cmd), flush=True)
@@ -183,6 +187,22 @@ def collect_images(history):
     return images
 
 
+_comfy_lock = threading.Lock()
+_comfy_ready = False
+
+
+def ensure_comfy():
+    """首次任务时才拉起 ComfyUI：worker 先向 RunPod 注册，避免初始化窗口被加载时间拖死。"""
+    global _comfy_ready
+    if _comfy_ready:
+        return
+    with _comfy_lock:
+        if _comfy_ready:
+            return
+        start_comfy()
+        _comfy_ready = True
+
+
 def handler(job):
     job_input = job.get("input") or {}
     workflow = job_input.get("workflow")
@@ -195,6 +215,7 @@ def handler(job):
         return {"error": "input.workflow 必填，且为 ComfyUI API 格式工作流（prompt 字典）"}
 
     try:
+        ensure_comfy()
         for item in job_input.get("images") or []:
             if not isinstance(item, dict) or "image" not in item:
                 return {"error": "input.images 每项需形如 {name, image(base64), subfolder?}"}
@@ -216,8 +237,8 @@ def main():
     # RunPod Serverless 会在容器里注入 RUNPOD_ENDPOINT_ID；没有它说明是 Pod/本地运行，
     # 转交 start.sh 起 ComfyUI Web 服务（两者共用同一个镜像）。
     if os.environ.get("RUNPOD_ENDPOINT_ID"):
-        start_comfy()
-        runpod.serverless.start({"handler": handler})
+        prepare_volume()  # 很快（写 yaml / 归位 / 软链），失败能在日志里立刻看到
+        runpod.serverless.start({"handler": handler})  # 立刻注册，ComfyUI 延迟到首个任务
     else:
         os.execvp("bash", ["bash", os.path.join(BUNDLE_DIR, "start.sh")])
 

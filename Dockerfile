@@ -51,9 +51,9 @@ RUN python "$BUNDLE_DIR/scripts/selfcheck.py"
 
 # RunPod Serverless：容器入口必须是 handler 文件本身（对照官方 worker-basic / create-dockerfile 文档），
 # 预检会顺着 CMD 找 runpod.serverless.start()。Pod 模式由 handler.py 内部转交 start.sh。
-COPY handler.py /handler.py
+COPY rp_handler.py /rp_handler.py
 
 WORKDIR $COMFYUI_DIR
 EXPOSE 8188
 VOLUME ["/workspace"]
-CMD ["python", "-u", "/handler.py"]
+CMD ["python", "-u", "/rp_handler.py"]
