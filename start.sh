@@ -43,6 +43,26 @@ comfyui_bundle:
     sams: sams
     ultralytics: ultralytics
 YAML
+
+  # RunPod 的 S3 兼容层会把含 ASCII 逗号的 key 整体转义，写不出 `loras/细化,风格` 这种目录名，
+  # 所以这类文件先传到 `loras/_staging`，这里在文件系统上归位（只生效一次，之后是空操作）。
+  if [ -d "$MODELS_DIR/loras/_staging" ]; then
+    echo "==> 归位 loras/_staging -> loras/细化,风格"
+    mkdir -p "$MODELS_DIR/loras/细化,风格"
+    for f in "$MODELS_DIR/loras/_staging/"*; do
+      if [ -e "$f" ]; then mv -f "$f" "$MODELS_DIR/loras/细化,风格/"; fi
+    done
+    rmdir "$MODELS_DIR/loras/_staging" 2>/dev/null || true
+  fi
+
+  # 卷上的 controlnet_aux ckpts（上传时落在 custom_nodes/ 下）链进容器内的节点目录
+  VOL_CKPTS="$MODELS_DIR/custom_nodes/comfyui_controlnet_aux/ckpts"
+  NODE_DIR="$COMFYUI_DIR/custom_nodes/comfyui_controlnet_aux"
+  if [ -d "$VOL_CKPTS" ] && [ -d "$NODE_DIR" ]; then
+    rm -rf "$NODE_DIR/ckpts"
+    ln -s "$VOL_CKPTS" "$NODE_DIR/ckpts"
+    echo "==> controlnet_aux ckpts 已指向卷"
+  fi
 fi
 
 if [ "$AUTO_DOWNLOAD_MODELS" = "1" ]; then

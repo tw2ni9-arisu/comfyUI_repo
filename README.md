@@ -150,6 +150,10 @@ scp -P <POD_PORT> -r D:/comfyUI/models root@<POD_IP>:/workspace/models
 # WSL 里更好用：rsync -avP --partial D:/comfyUI/models/ root@<POD_IP>:/workspace/models/
 ```
 
+> **含 ASCII 逗号的路径**（如 `loras/细化,风格`）：RunPod 的 S3 兼容层会把整条 key 转义，
+> 写不出真实逗号。存到 `models/loras/_staging/` 即可，`start.sh` 启动时会在文件系统上归位到真实目录名。
+> 另外卷上的 `custom_nodes/comfyui_controlnet_aux/ckpts` 会被自动软链进容器。
+
 > 清单里 4 个 Civitai 文件（shadowforge / k2-void / Krea2Rella / masterpiece）创作者开了「需登录下载」，
 > 必须提供 `CIVITAI_TOKEN`（<https://civitai.com/user/account> → API Keys）；其余文件无 token 也能从 HF 直链下。
 
