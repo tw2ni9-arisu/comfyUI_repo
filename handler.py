@@ -45,6 +45,7 @@ import uuid
 
 import runpod
 
+BUNDLE_DIR = os.environ.get("BUNDLE_DIR") or os.path.dirname(os.path.abspath(__file__))
 COMFYUI_DIR = os.environ.get("COMFYUI_DIR", "/opt/ComfyUI")
 BASE = os.environ.get("COMFY_BASE_URL", "http://127.0.0.1:8188").rstrip("/")
 JOB_TIMEOUT = float(os.environ.get("COMFY_JOB_TIMEOUT", "1800"))
@@ -204,6 +205,15 @@ def handler(job):
         return {"error": "%s: %s" % (type(exc).__name__, exc)}
 
 
+def main():
+    # RunPod Serverless 会在容器里注入 RUNPOD_ENDPOINT_ID；没有它说明是 Pod/本地运行，
+    # 转交 start.sh 起 ComfyUI Web 服务（两者共用同一个镜像）。
+    if os.environ.get("RUNPOD_ENDPOINT_ID"):
+        start_comfy()
+        runpod.serverless.start({"handler": handler})
+    else:
+        os.execvp("bash", ["bash", os.path.join(BUNDLE_DIR, "start.sh")])
+
+
 if __name__ == "__main__":
-    start_comfy()
-    runpod.serverless.start({"handler": handler})
+    main()

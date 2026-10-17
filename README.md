@@ -57,10 +57,11 @@ git push -u origin main
 
 ### 方式 D：RunPod Serverless（queue-based endpoint）
 
-同一个镜像两种模式都能跑，靠环境变量自动切换：
+容器入口是 **`handler.py`**（`CMD ["python", "-u", "/handler.py"]`，与 RunPod 官方 worker-basic 写法一致，
+这样 GitHub 部署的 handler 预检才能找到 `runpod.serverless.start()`）。两种模式在 `main()` 里自动分流：
 
-- **Serverless**：RunPod 会注入 `RUNPOD_ENDPOINT_ID` → `start.sh` 自动 `exec handler.py`（queue worker）
-- **Pod**：没有该变量 → 照常启动 ComfyUI Web 服务（8188）
+- **Serverless**：RunPod 注入 `RUNPOD_ENDPOINT_ID` → 拉起 ComfyUI 子进程并进入 queue worker
+- **Pod**：没有该变量 → `exec` 转交 `start.sh`，照常启动 ComfyUI Web 服务（8188）
 
 ```bash
 # 端点（endpoint）配置

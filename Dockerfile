@@ -49,7 +49,11 @@ RUN "$VENV_DIR/bin/pip" install -r "$BUNDLE_DIR/requirements-serverless.txt" --i
 # 4) 自检：确认核心与节点能 import（构建期失败好过运行时才发现）
 RUN python "$BUNDLE_DIR/scripts/selfcheck.py"
 
+# RunPod Serverless：容器入口必须是 handler 文件本身（对照官方 worker-basic / create-dockerfile 文档），
+# 预检会顺着 CMD 找 runpod.serverless.start()。Pod 模式由 handler.py 内部转交 start.sh。
+COPY handler.py /handler.py
+
 WORKDIR $COMFYUI_DIR
 EXPOSE 8188
 VOLUME ["/workspace"]
-CMD ["bash", "/opt/bundle/start.sh"]
+CMD ["python", "-u", "/handler.py"]
