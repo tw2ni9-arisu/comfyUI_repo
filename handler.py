@@ -95,6 +95,13 @@ def start_comfy():
         wait_until_ready()
         return None
     port = urllib.parse.urlparse(BASE).port or 8188
+    # 卷准备（extra_model_paths.yaml / _staging 归位 / ckpts 软链 / 可选下载）由 start.sh 负责，
+    # 这里以「仅准备」模式调用它，之后再由本进程启动 ComfyUI。
+    prepare = os.path.join(BUNDLE_DIR, "start.sh")
+    if os.path.exists(prepare):
+        print("[handler] 准备模型目录：%s" % prepare, flush=True)
+        subprocess.run(["bash", prepare], env=dict(os.environ, BUNDLE_PREPARE_ONLY="1"), check=False)
+
     cmd = [sys.executable, "main.py", "--listen", "127.0.0.1", "--port", str(port), "--disable-auto-launch"]
     cmd += [a for a in os.environ.get("COMFY_EXTRA_ARGS", "").split() if a]
     print("[handler] 启动 ComfyUI: %s" % " ".join(cmd), flush=True)

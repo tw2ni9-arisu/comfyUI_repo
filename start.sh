@@ -83,6 +83,11 @@ else:
     print("[warn] 未检测到 GPU，ComfyUI 将以 CPU 运行 —— 请确认 Pod 选了 GPU")
 PY
 
+if [ "${BUNDLE_PREPARE_ONLY:-}" = "1" ]; then
+  echo "==> 仅准备模式：卷已就绪，交给 handler.py 启动 ComfyUI"
+  exit 0
+fi
+
 echo "==> 启动 ComfyUI: http://$COMFY_LISTEN:$COMFY_PORT"
 cd "$COMFYUI_DIR"
 run_args=(main.py --listen "$COMFY_LISTEN" --port "$COMFY_PORT")
